@@ -1,5 +1,7 @@
 //https://cdn.discordapp.com/attachments/622534733351485470/967048993492332544/unknown.png
 
+use std::ops::Add;
+
 pub struct BigUint {
     limbs: Vec<u64>
 }
@@ -16,6 +18,27 @@ impl BigUint {
             limbs: Vec::from(limbs)
         }
     }
+
+    fn min_limbs(&mut self) {
+        for i in (0..self.limbs.len()).rev() {
+            if self.limbs[i] == 0 {
+                assert_eq!(self.limbs.pop(), Some(0));
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn clone_capacity(&self, capacity: usize) -> Self {
+        assert!(self.limbs.len() <= capacity);
+        let mut new_limbs = self.limbs.clone();
+        for _i in self.limbs.len()..capacity {
+            new_limbs.push(0);
+        }
+        Self{
+            limbs: new_limbs
+        }
+    }
 }
 
 impl From<u64> for BigUint {
@@ -23,6 +46,50 @@ impl From<u64> for BigUint {
         Self{
             limbs: vec![val]
         }
+    }
+}
+
+impl Add for BigUint {
+    type Output = BigUint;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        &self + &rhs
+    }
+}
+
+impl Add for &BigUint {
+    type Output = BigUint;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut result = self.clone_capacity(std::cmp::max(self.limbs.len(), rhs.limbs.len()) + 1);
+
+        let mut carry = 0u64;
+        for i in 0..rhs.limbs.len() {
+            let (sum, overflow) = result.limbs[i].overflowing_add(carry);
+            carry = 0;
+            if overflow {
+                carry = 1;
+            }
+            let (sum, overflow) = sum.overflowing_add(rhs.limbs[i]);
+            if overflow {
+                assert!(carry == 0);
+                carry = 1;
+            }
+            result.limbs[i] = sum;
+        }
+
+        let mut i = rhs.limbs.len();
+        loop {
+            let (sum, overflow) = result.limbs[i].overflowing_add(carry);
+            result.limbs[i] = sum;
+            if !overflow {
+                break;
+            }
+            i += 1;
+        }
+
+        result.min_limbs();
+        result
     }
 }
 
@@ -40,5 +107,16 @@ mod tests {
 
         let int = BigUint::from_limbs(&[0x1234, 5678]);
         assert_eq!(int.limbs, vec![0x1234, 5678]);
+    }
+
+    #[test]
+    fn add_and_sub() {
+        let a = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
+        let b = BigUint::from_limbs(&[0x2234567898765432]);
+        assert_eq!((&a + &b).limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
+        
+        let a = BigUint::from_limbs(&[0x2234567898765432]);
+        let b = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
+        assert_eq!((&a + &b).limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
     }
 }
