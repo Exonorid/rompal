@@ -1,6 +1,6 @@
 //https://cdn.discordapp.com/attachments/622534733351485470/967048993492332544/unknown.png
 
-use std::ops::Add;
+use std::ops::{Add, Sub};
 
 pub struct BigUint {
     limbs: Vec<u64>
@@ -93,6 +93,53 @@ impl Add for &BigUint {
     }
 }
 
+impl Sub for BigUint {
+    type Output = BigUint;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        &self - &rhs
+    }
+}
+
+impl Sub for &BigUint {
+    type Output = BigUint;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut result = self.clone_capacity(std::cmp::max(self.limbs.len(), rhs.limbs.len()));
+
+        let mut borrow = 0u64;
+        for i in 0..rhs.limbs.len() {
+            let (diff, overflow) = result.limbs[i].overflowing_sub(borrow);
+            borrow = 0;
+            if overflow {
+                borrow = 1;
+            }
+            let (diff, overflow) = diff.overflowing_sub(rhs.limbs[i]);
+            if overflow {
+                assert!(borrow == 0);
+                borrow = 1;
+            }
+            result.limbs[i] = diff;
+        }
+
+        let mut i = rhs.limbs.len();
+        while borrow != 0 {
+            if i >= result.limbs.len() {
+                panic!("attempt to subtract with overflow");
+            }
+            let (diff, overflow) = result.limbs[i].overflowing_sub(borrow);
+            result.limbs[i] = diff;
+            if !overflow {
+                break;
+            }
+            i += 1;
+        }
+
+        result.min_limbs();
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::BigUint;
@@ -113,10 +160,16 @@ mod tests {
     fn add_and_sub() {
         let a = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
         let b = BigUint::from_limbs(&[0x2234567898765432]);
-        assert_eq!((&a + &b).limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
+        let sum = &a + &b;
+        assert_eq!(sum.limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
+        assert_eq!((&sum - &b).limbs, a.limbs);
+        assert_eq!((&sum - &a).limbs, b.limbs);
         
         let a = BigUint::from_limbs(&[0x2234567898765432]);
         let b = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
-        assert_eq!((&a + &b).limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
+        let sum = &a + &b;
+        assert_eq!(sum.limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
+        assert_eq!((&sum - &b).limbs, a.limbs);
+        assert_eq!((&sum - &a).limbs, b.limbs);
     }
 }
