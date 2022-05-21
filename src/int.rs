@@ -1,6 +1,6 @@
 //https://cdn.discordapp.com/attachments/622534733351485470/967048993492332544/unknown.png
 
-use std::ops::{Add, Sub};
+use std::ops::{Add, Sub, Mul};
 
 pub struct BigUint {
     limbs: Vec<u64>
@@ -140,6 +140,47 @@ impl Sub for &BigUint {
     }
 }
 
+impl Mul for BigUint {
+    type Output = BigUint;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        &self * &rhs
+    }
+}
+
+impl Mul for &BigUint {
+    type Output = BigUint;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut result = BigUint::new();
+        for _i in 0..(self.limbs.len() + rhs.limbs.len()) {
+            result.limbs.push(0u64);
+        }
+
+        for j in 0..rhs.limbs.len() {
+            if rhs.limbs[j] == 0 {
+                continue;
+            }
+
+            let mut k = 0u64;
+            for i in 0..self.limbs.len() {
+                let (t, kp) = self.limbs[i].carrying_mul(rhs.limbs[j], k);
+                k = kp;
+                let (tp, kp) = t.overflowing_add(result.limbs[i + j]);
+                if kp {
+                    k += 1;
+                }
+                result.limbs[i + j] = tp;
+            }
+
+            result.limbs[j + self.limbs.len()] = k;
+        }
+
+        result.min_limbs();
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::BigUint;
@@ -171,5 +212,18 @@ mod tests {
         assert_eq!(sum.limbs, &[0x211111110ECA8642, 0x0000000000000000, 1]);
         assert_eq!((&sum - &b).limbs, a.limbs);
         assert_eq!((&sum - &a).limbs, b.limbs);
+    }
+
+    #[test]
+    fn mul() {
+        let a = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
+        let b = BigUint::from_limbs(&[0x2234567898765432]);
+        let prod = &a * &b;
+        assert_eq!(prod.limbs, &[0xC867D8A3503F0720, 0xFFD9153BC4286F20, 0x2234567898765431]);
+        
+        let a = BigUint::from_limbs(&[0x2234567898765432]);
+        let b = BigUint::from_limbs(&[0xfedcba9876543210, 0xffffffffffffffff]);
+        let prod = &a * &b;
+        assert_eq!(prod.limbs, &[0xC867D8A3503F0720, 0xFFD9153BC4286F20, 0x2234567898765431]);
     }
 }
